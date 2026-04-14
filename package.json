@@ -1,0 +1,19 @@
+{
+  "name": "amazon-rufus",
+  "version": "1.0.0",
+  "description": "Claude Code skill: scrape Amazon Rufus FAQ → Feishu Bitable",
+  "type": "module",
+  "bin": {
+    "amazon-rufus": "bin/install.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["claude-code", "skill", "amazon", "rufus", "feishu", "scraper"],
+  "author": "1va7",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/1va7/amazon-rufus.git"
+  }
+}
