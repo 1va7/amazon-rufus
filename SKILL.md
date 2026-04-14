@@ -82,7 +82,9 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/scrape_rufus.py" \
 - 页面加载太慢：重试时加 `--wait 12`
 - Amazon 地区限制：确认 Chrome 已登录美区 Amazon 账户
 
-### Step 4 — 上传至飞书
+### Step 4 — 保存结果
+
+`feishu_upload.py` 会自动读取 config 中的 `output` 字段，路由至飞书或本地 Excel：
 
 ```bash
 cat /tmp/rufus_data.json | python3 -c "
@@ -105,8 +107,9 @@ if result.returncode != 0:
 
 ### Step 5 — 返回结果
 
-解析上一步的 JSON 输出，向用户展示：
+解析上一步的 JSON 输出（`mode` 字段区分路由），向用户展示：
 
+**飞书模式（`mode: "feishu"`）：**
 ```
 ✅ 采集完成！
 
@@ -118,6 +121,17 @@ FAQ 条数：<qa_count> 条（其中 <qa_with_images> 条含 Rufus 图片）
 飞书多维表格：<bitable_url>
 ```
 
+**Excel 模式（`mode: "excel"`）：**
+```
+✅ 采集完成！
+
+产品：<product_name>
+ASIN：<asin>
+FAQ 条数：<qa_count> 条（其中 <qa_with_images> 条含 Rufus 图片）
+
+已保存至：<file>
+```
+
 ---
 
 ## 文件说明
@@ -126,20 +140,21 @@ FAQ 条数：<qa_count> 条（其中 <qa_with_images> 条含 Rufus 图片）
 |------|------|
 | `scripts/check-deps.mjs` | 检查 Chrome CDP + 启动 proxy（自包含，无需 web-access） |
 | `scripts/cdp-proxy.mjs`  | CDP HTTP 代理（来自 eze-is/web-access，MIT 许可） |
-| `scripts/feishu_setup.py`| 首次配置：引导创建飞书应用 + 建表 + 保存 config |
+| `scripts/feishu_setup.py`| 首次配置：选择输出方式 → 飞书或本地 Excel |
 | `scripts/scrape_rufus.py`| CDP 抓取脚本：打开 Amazon → 读 pill → 提交 → 采集 |
-| `scripts/feishu_upload.py`| 上传至飞书：ASIN 去重 + 建产品记录 + 建 QA 记录 |
+| `scripts/feishu_upload.py`| 路由脚本：飞书模式上传多维表格 / Excel 模式调用 excel_export.py |
+| `scripts/excel_export.py`| stdlib xlsx 生成器（zipfile，无 pip 依赖） |
 | `references/feishu_app_setup.md` | 飞书应用创建图文教程 |
 
 ## 用户配置文件
 
 `~/.config/amazon-rufus/config.json`（首次运行后自动生成）：
+
+**飞书模式：**
 ```json
 {
-  "feishu": {
-    "app_id": "cli_xxx",
-    "app_secret": "xxx"
-  },
+  "output": "feishu",
+  "feishu": { "app_id": "cli_xxx", "app_secret": "xxx" },
   "bitable": {
     "base_token": "xxx",
     "products_table_id": "tblxxx",
@@ -149,9 +164,17 @@ FAQ 条数：<qa_count> 条（其中 <qa_with_images> 条含 Rufus 图片）
 }
 ```
 
+**Excel 模式：**
+```json
+{
+  "output": "excel",
+  "excel": { "output_dir": "~/Desktop/rufus-faq" }
+}
+```
+
 ## 系统要求
 
-- **Node.js 22+**（CDP proxy 依赖）
+- **Node.js 18+**（CDP proxy 依赖）
 - **Python 3.10+**（标准库，无需额外安装）
 - **Google Chrome**（需开启远程调试，见 Step 1）
-- **飞书企业账户**（创建自建应用，见 Step 2）
+- **飞书企业账户**（仅飞书模式需要）

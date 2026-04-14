@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Amazon Rufus FAQ → 飞书多维表格 上传脚本（两表结构版）
+Amazon Rufus FAQ — 上传 / 导出脚本
 
-数据结构：
-  产品表  ←→  Rufus QA 表（双向关联）
+根据 ~/.config/amazon-rufus/config.json 中的 "output" 字段自动路由：
+  "feishu" → 上传至飞书多维表格（产品表 + QA 表，双向关联）
+  "excel"  → 导出为本地 Excel 文件（两张 sheet）
 
 用法:
   python3 feishu_upload.py \
@@ -154,24 +155,10 @@ def create_qa_record(token: str, base_token: str, qa_table_id: str,
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 
-def main():
-    parser = argparse.ArgumentParser(description="Upload Rufus FAQ to Feishu Bitable")
-    parser.add_argument("--product-name", required=True)
-    parser.add_argument("--product-url",  required=True)
-    parser.add_argument("--asin",         required=True)
-    parser.add_argument("--price",        default="")
-    parser.add_argument("--rating",       default="")
-    parser.add_argument("--faqs-json",    required=True,
-                        help='JSON: [{"q":"...","a":"...","imgs":["url",...]}]')
-    args = parser.parse_args()
+def upload_to_feishu(cfg: dict, args) -> dict:
+    """Upload FAQ data to Feishu Bitable. Returns result dict."""
+    faqs = json.loads(args.faqs_json)
 
-    try:
-        faqs = json.loads(args.faqs_json)
-    except json.JSONDecodeError as e:
-        print(json.dumps({"ok": False, "error": f"faqs-json 解析失败: {e}"}))
-        sys.exit(1)
-
-    cfg = load_config()
     feishu_cfg = cfg["feishu"]
     bitable_cfg = cfg["bitable"]
 
@@ -180,7 +167,7 @@ def main():
     qa_table_id        = bitable_cfg["qa_table_id"]
     bitable_url        = bitable_cfg["url"]
 
-    print(f"获取飞书 Token...", file=sys.stderr)
+    print("获取飞书 Token...", file=sys.stderr)
     token = get_token(feishu_cfg["app_id"], feishu_cfg["app_secret"])
 
     # Check for existing product
@@ -192,7 +179,7 @@ def main():
         product_record_id = existing_id
         is_new_product = False
     else:
-        print(f"创建新产品记录...", file=sys.stderr)
+        print("创建新产品记录...", file=sys.stderr)
         product_record_id = create_product_record(
             token, base_token, products_table_id,
             args.product_name, args.asin, args.product_url,
@@ -206,7 +193,6 @@ def main():
     for i, faq in enumerate(faqs, 1):
         print(f"  QA {i}/{len(faqs)}: {faq.get('q','')[:50]}...", file=sys.stderr)
 
-        # Upload images
         img_tokens = []
         for j, img_url in enumerate(faq.get("imgs", [])):
             ft = upload_image(token, base_token, img_url, f"rufus_{args.asin}_{i}_{j+1}.jpg")
@@ -222,8 +208,9 @@ def main():
             img_tokens, product_record_id)
         qa_record_ids.append(rid)
 
-    result = {
+    return {
         "ok": True,
+        "mode": "feishu",
         "bitable_url": bitable_url,
         "asin": args.asin,
         "product_record_id": product_record_id,
@@ -232,6 +219,67 @@ def main():
         "qa_with_images": img_count,
         "qa_record_ids": qa_record_ids,
     }
+
+
+def upload_to_excel(cfg: dict, args) -> dict:
+    """Export FAQ data to a local Excel file. Returns result dict."""
+    import importlib.util, pathlib
+
+    # Locate excel_export.py next to this file
+    here = pathlib.Path(__file__).parent
+    spec = importlib.util.spec_from_file_location("excel_export", here / "excel_export.py")
+    mod  = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    output_dir = os.path.expanduser(cfg["excel"]["output_dir"])
+    faqs = json.loads(args.faqs_json)
+
+    filepath = mod.export(
+        asin=args.asin,
+        product_name=args.product_name,
+        product_url=args.product_url,
+        price=args.price,
+        rating=args.rating,
+        faqs=faqs,
+        output_dir=output_dir,
+    )
+    print(f"Excel 已保存: {filepath}", file=sys.stderr)
+
+    return {
+        "ok": True,
+        "mode": "excel",
+        "file": filepath,
+        "asin": args.asin,
+        "qa_count": len(faqs),
+        "qa_with_images": sum(1 for f in faqs if f.get("imgs")),
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Save Rufus FAQ (Feishu or Excel)")
+    parser.add_argument("--product-name", required=True)
+    parser.add_argument("--product-url",  required=True)
+    parser.add_argument("--asin",         required=True)
+    parser.add_argument("--price",        default="")
+    parser.add_argument("--rating",       default="")
+    parser.add_argument("--faqs-json",    required=True,
+                        help='JSON: [{"q":"...","a":"...","imgs":["url",...]}]')
+    args = parser.parse_args()
+
+    try:
+        json.loads(args.faqs_json)  # validate early
+    except json.JSONDecodeError as e:
+        print(json.dumps({"ok": False, "error": f"faqs-json 解析失败: {e}"}))
+        sys.exit(1)
+
+    cfg = load_config()
+    mode = cfg.get("output", "feishu")
+
+    if mode == "excel":
+        result = upload_to_excel(cfg, args)
+    else:
+        result = upload_to_feishu(cfg, args)
+
     print(json.dumps(result, ensure_ascii=False))
 
 
