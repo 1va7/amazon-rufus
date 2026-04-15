@@ -1,143 +1,96 @@
 ---
 name: amazon-rufus
-description: This skill should be used when the user wants to scrape Amazon Rufus FAQ Q&A data for a product and save it to a Feishu Bitable. Triggers when the user provides an Amazon ASIN (format like "B0DN9WR2TX" or "asin: B0DN9WR2TX") and mentions scraping Rufus, collecting FAQ answers, Amazon product Q&A, Rufus采集, FAQ抓取, or similar. Handles the full end-to-end flow: Chrome setup, scraping, and Feishu upload. No prior setup assumed.
-version: 2.0.0
+description: >
+  Use this skill when the user wants to scrape Amazon Rufus AI FAQ Q&A for a product.
+  Triggers when an Amazon ASIN (e.g. "B0DN9WR2TX") is provided alongside keywords like:
+  Rufus, Rufus FAQ, Rufus采集, FAQ抓取, Amazon product Q&A, scrape Rufus, collect FAQ.
+  Handles the full pipeline: Chrome setup → config → scrape → save to Feishu or Excel.
+version: 2.1.0
 ---
 
 # Amazon Rufus FAQ Scraper
 
-从 Amazon 产品页的 Rufus AI 助手中自动采集默认 FAQ 问答（含回复图片），写入飞书多维表格（产品表 + QA 表，双向关联）。
-
-## 数据结构
-
-```
-飞书多维表格
-├── 产品表        ASIN / 产品名称 / 链接 / 价格 / 评分 / 采集时间 / [Rufus QA]
-└── Rufus QA 表  问题 / 答案 / Rufus图片 / 序号 / [产品]（双向关联）
-```
-
-同一 ASIN 重复采集时，产品记录复用，QA 记录追加。
+自动从 Amazon 产品页 Rufus AI 助手采集默认 FAQ 问答（含图片），保存至飞书多维表格或本地 Excel。
 
 ---
 
-## 执行流程
+## 路径说明（Path Resolution）
 
-### Step 0 — 确认 ASIN
+`CLAUDE_SKILL_DIR` 在所有命令中指向本 `SKILL.md` 所在目录：
 
-从用户消息中提取 ASIN（10 位字母数字，如 `B0DN9WR2TX`）。若不确定，向用户确认后再继续。
+| 运行环境 | 如何获取 `CLAUDE_SKILL_DIR` |
+|---------|---------------------------|
+| **Claude Code** | 自动注入，无需操作 |
+| **Hermes / OpenClaw** | 本 `SKILL.md` 所在目录即为技能根目录。<br>例：若 `SKILL.md` 位于 `/home/user/.hermes/skills/amazon-rufus/SKILL.md`，则 `CLAUDE_SKILL_DIR=/home/user/.hermes/skills/amazon-rufus` |
+| **直接调用** | `export CLAUDE_SKILL_DIR=/path/to/amazon-rufus` |
 
-### Step 1 — 检查 Chrome CDP 环境
+---
 
-**前置条件（必须同时满足）：**
-- Chrome 已开启远程调试
-- Chrome 已登录美区 Amazon 账户（**Rufus 不向未登录用户显示，缺少登录态会导致 FAQ 采集为空**）
+## 执行命令
 
-```bash
-node "${CLAUDE_SKILL_DIR}/scripts/check-deps.mjs"
-```
-
-**若输出 `chrome: NOT FOUND`：**
-提示用户完成以下操作（完成后再次运行脚本确认）：
-1. 打开 Google Chrome
-2. 地址栏输入 `chrome://inspect/#remote-debugging`
-3. 勾选 **"Allow remote debugging for this browser instance"**
-
-**若输出 `proxy: ready`：** 继续下一步。
-
-向用户展示以下提示后继续：
-> 温馨提示：部分站点对浏览器自动化操作检测严格，存在账号封禁风险。已内置防护措施但无法完全避免，继续操作即视为接受。
-
-### Step 2 — 检查飞书配置
+**推荐**：使用单一入口脚本，内置全流程、自动路径发现：
 
 ```bash
-python3 "${CLAUDE_SKILL_DIR}/scripts/feishu_setup.py" --check
+bash "${CLAUDE_SKILL_DIR}/scripts/run.sh" --asin <ASIN>
 ```
 
-**若配置不存在或无效，运行初始配置：**
-
-优先使用非交互模式（已知 App ID / App Secret 时）：
+首次运行（含飞书凭证，非交互）：
 ```bash
 # 飞书模式
-python3 "${CLAUDE_SKILL_DIR}/scripts/feishu_setup.py" \
+bash "${CLAUDE_SKILL_DIR}/scripts/run.sh" \
+  --asin <ASIN> \
   --output feishu \
   --app-id <APP_ID> \
   --app-secret <APP_SECRET>
 
-# Excel 模式（不需要飞书）
-python3 "${CLAUDE_SKILL_DIR}/scripts/feishu_setup.py" \
+# Excel 模式（无需飞书）
+bash "${CLAUDE_SKILL_DIR}/scripts/run.sh" \
+  --asin <ASIN> \
   --output excel \
   --output-dir ~/Desktop/rufus-faq
 ```
 
-若需向用户索取凭证，可使用交互模式（需 TTY）：
-```bash
-python3 "${CLAUDE_SKILL_DIR}/scripts/feishu_setup.py"
+**`run.sh` 全部参数：**
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--asin` | Amazon ASIN（必填） | — |
+| `--output` | `feishu` 或 `excel`（首次必填） | 读取已有配置 |
+| `--app-id` | 飞书 App ID | — |
+| `--app-secret` | 飞书 App Secret | — |
+| `--output-dir` | Excel 保存目录 | `~/Desktop/rufus-faq` |
+| `--wait` | 每道题等待 Rufus 回复的秒数 | `8` |
+
+---
+
+## 成功输出（JSON）
+
+```json
+{
+  "ok": true,
+  "mode": "feishu",
+  "bitable_url": "https://...",
+  "asin": "B0DN9WR2TX",
+  "qa_count": 5,
+  "qa_with_images": 2,
+  "is_new_product": true
+}
 ```
 
-脚本会自动创建包含两张表的多维表格，保存配置至 `~/.config/amazon-rufus/config.json`。
-
-**若配置有效：** 继续下一步。
-
-### Step 3 — 抓取 Rufus FAQ
-
-```bash
-python3 "${CLAUDE_SKILL_DIR}/scripts/scrape_rufus.py" \
-  --asin "<ASIN>" \
-  > /tmp/rufus_data.json
+或 Excel 模式：
+```json
+{
+  "ok": true,
+  "mode": "excel",
+  "file": "/Users/xxx/Desktop/rufus-faq/rufus_faq_B0DN9WR2TX_20240101_120000.xlsx",
+  "asin": "B0DN9WR2TX",
+  "qa_count": 5,
+  "qa_with_images": 2
+}
 ```
 
-脚本自动完成：
-1. 在新后台 tab 中打开 `amazon.com/dp/<ASIN>`
-2. 等待页面加载，读取 Rufus 默认 pill 问题（页面首次加载时显示的那几条）
-3. 逐条通过文本输入框提交问题，等待 Rufus 回复
-4. 采集每条 Q&A 及 Rufus 回复中的图片 URL
-5. 关闭 tab，输出 JSON 到 stdout
+向用户展示结果时：
 
-若脚本报错 `Rufus pills not found` 或 FAQ 列表为空，可能原因：
-- **Amazon 未登录**（最常见）：确认 Chrome 中已登录美区 Amazon 账户，Rufus 仅对登录用户显示
-- 页面加载太慢：重试时加 `--wait 12`
-- Amazon 地区限制：确认 Chrome 代理设置指向美区
-
-### Step 4 — 保存结果
-
-`feishu_upload.py` 会自动读取 config 中的 `output` 字段，路由至飞书或本地 Excel：
-
-```bash
-cat /tmp/rufus_data.json | python3 -c "
-import json, sys, subprocess
-data = json.load(sys.stdin)
-result = subprocess.run([
-    'python3', '${CLAUDE_SKILL_DIR}/scripts/feishu_upload.py',
-    '--asin',         data['asin'],
-    '--product-name', data['product_name'],
-    '--product-url',  data['product_url'],
-    '--price',        data['price'],
-    '--rating',       data['rating'],
-    '--faqs-json',    json.dumps(data['faqs'], ensure_ascii=False),
-], capture_output=True, text=True)
-print(result.stdout)
-if result.returncode != 0:
-    print('STDERR:', result.stderr, file=sys.stderr)
-"
-```
-
-### Step 5 — 返回结果
-
-解析上一步的 JSON 输出（`mode` 字段区分路由），向用户展示：
-
-**飞书模式（`mode: "feishu"`）：**
-```
-✅ 采集完成！
-
-产品：<product_name>
-ASIN：<asin>
-FAQ 条数：<qa_count> 条（其中 <qa_with_images> 条含 Rufus 图片）
-产品记录：<新建 / 已存在复用>
-
-飞书多维表格：<bitable_url>
-```
-
-**Excel 模式（`mode: "excel"`）：**
 ```
 ✅ 采集完成！
 
@@ -145,8 +98,48 @@ FAQ 条数：<qa_count> 条（其中 <qa_with_images> 条含 Rufus 图片）
 ASIN：<asin>
 FAQ 条数：<qa_count> 条（其中 <qa_with_images> 条含 Rufus 图片）
 
-已保存至：<file>
+[飞书模式] 多维表格：<bitable_url>
+[Excel 模式] 文件：<file>
 ```
+
+---
+
+## 常见错误处理
+
+| 错误 / 现象 | 原因 | 解决 |
+|------------|------|------|
+| `chrome: NOT FOUND` | Chrome 未开启远程调试 | 打开 `chrome://inspect/#remote-debugging` → 勾选 Allow remote debugging |
+| FAQ 为空 / Rufus pills not found | **Chrome 未登录 Amazon**（最常见） | 在 Chrome 中登录美区 Amazon 后重试 |
+| FAQ 为空 | 页面加载太慢 | 加 `--wait 12` 重试 |
+| `❌ 未找到有效配置` | 首次运行未初始化 | 加 `--output` 和对应参数（见上方示例） |
+| 飞书凭证无效 | App ID/Secret 错误或应用未发布 | 在飞书开放平台重新获取或重新发布应用 |
+
+---
+
+## 系统要求
+
+- **Node.js 18+**（CDP proxy 依赖）
+- **Python 3.8+**（标准库，无需额外安装）
+- **Google Chrome**（需开启远程调试 + 登录美区 Amazon）
+- **飞书企业账户**（仅飞书模式需要；Excel 模式无需飞书）
+
+---
+
+## 数据结构
+
+**飞书多维表格：**
+```
+├── 产品表     ASIN / 产品名称 / 链接 / 价格 / 评分 / 采集时间
+└── Rufus QA  问题 / 答案 / Rufus图片 / 序号 / 产品（↔ 双向关联）
+```
+
+**Excel（两 sheet）：**
+```
+├── 产品信息  ASIN / 产品名称 / 价格 / 评分 / 采集时间 / 产品链接
+└── Rufus QA  ASIN / 序号 / 问题 / 答案 / 图片数量 / 图片URLs
+```
+
+同一 ASIN 重复采集（飞书模式）→ 产品记录复用，QA 追加。
 
 ---
 
@@ -154,43 +147,11 @@ FAQ 条数：<qa_count> 条（其中 <qa_with_images> 条含 Rufus 图片）
 
 | 文件 | 说明 |
 |------|------|
-| `scripts/check-deps.mjs` | 检查 Chrome CDP + 启动 proxy（自包含，无需 web-access） |
-| `scripts/cdp-proxy.mjs`  | CDP HTTP 代理（来自 eze-is/web-access，MIT 许可） |
-| `scripts/feishu_setup.py`| 首次配置：选择输出方式 → 飞书或本地 Excel |
-| `scripts/scrape_rufus.py`| CDP 抓取脚本：打开 Amazon → 读 pill → 提交 → 采集 |
-| `scripts/feishu_upload.py`| 路由脚本：飞书模式上传多维表格 / Excel 模式调用 excel_export.py |
-| `scripts/excel_export.py`| stdlib xlsx 生成器（zipfile，无 pip 依赖） |
+| `scripts/run.sh` | **主入口**：全流程自动化，自发现路径 |
+| `scripts/check-deps.mjs` | Chrome CDP 检查 + proxy 启动 |
+| `scripts/cdp-proxy.mjs` | CDP HTTP 代理 |
+| `scripts/feishu_setup.py` | 配置：支持交互 / `--app-id`/`--app-secret` 非交互两种模式 |
+| `scripts/scrape_rufus.py` | Rufus 抓取：开 tab → 读 pill → 提交 → 采集 |
+| `scripts/feishu_upload.py` | 路由：飞书上传 or Excel 导出 |
+| `scripts/excel_export.py` | stdlib xlsx 生成器（zipfile，无 pip） |
 | `references/feishu_app_setup.md` | 飞书应用创建图文教程 |
-
-## 用户配置文件
-
-`~/.config/amazon-rufus/config.json`（首次运行后自动生成）：
-
-**飞书模式：**
-```json
-{
-  "output": "feishu",
-  "feishu": { "app_id": "cli_xxx", "app_secret": "xxx" },
-  "bitable": {
-    "base_token": "xxx",
-    "products_table_id": "tblxxx",
-    "qa_table_id": "tblxxx",
-    "url": "https://..."
-  }
-}
-```
-
-**Excel 模式：**
-```json
-{
-  "output": "excel",
-  "excel": { "output_dir": "~/Desktop/rufus-faq" }
-}
-```
-
-## 系统要求
-
-- **Node.js 18+**（CDP proxy 依赖）
-- **Python 3.10+**（标准库，无需额外安装）
-- **Google Chrome**（需开启远程调试，见 Step 1）
-- **飞书企业账户**（仅飞书模式需要）
