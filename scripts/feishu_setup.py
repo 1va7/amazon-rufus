@@ -261,13 +261,65 @@ def run_check():
         sys.exit(1)
 
 
+def _run_setup_noninteractive(args):
+    """Configure without any input() prompts — for agent/script use."""
+    if args.output == "feishu":
+        if not args.app_id or not args.app_secret:
+            print("❌ --output feishu 需要同时提供 --app-id 和 --app-secret")
+            sys.exit(1)
+        print("\n🔑 验证凭证...")
+        token = get_token(args.app_id, args.app_secret)
+        if not token:
+            print("❌ 凭证无效，请检查 App ID 和 App Secret")
+            sys.exit(1)
+        print("   ✓ 凭证有效")
+        bitable_cfg = setup_bitable(token)
+        cfg = {
+            "output": "feishu",
+            "feishu":  {"app_id": args.app_id, "app_secret": args.app_secret},
+            "bitable": bitable_cfg,
+        }
+    else:  # excel
+        output_dir = os.path.expanduser(args.output_dir or "~/Desktop/rufus-faq")
+        os.makedirs(output_dir, exist_ok=True)
+        print(f"   ✓ 将保存至: {output_dir}")
+        cfg = {
+            "output": "excel",
+            "excel":  {"output_dir": output_dir},
+        }
+    save_config(cfg)
+    print("\n🎉 配置完成！")
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--check", action="store_true")
-    parser.add_argument("--reset", action="store_true")
+    parser = argparse.ArgumentParser(
+        description="Amazon Rufus — 首次配置",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+非交互模式（适合 agent 脚本）：
+  飞书：python3 feishu_setup.py --output feishu --app-id cli_xxx --app-secret xxx
+  Excel：python3 feishu_setup.py --output excel --output-dir ~/Desktop/rufus-faq
+        """,
+    )
+    parser.add_argument("--check", action="store_true",
+                        help="检查现有配置是否有效")
+    parser.add_argument("--reset", action="store_true",
+                        help="删除现有配置，重新配置")
+    # Non-interactive flags
+    parser.add_argument("--output", choices=["feishu", "excel"],
+                        help="输出方式（非交互）")
+    parser.add_argument("--app-id",     default="",
+                        help="飞书 App ID（非交互，--output feishu 时使用）")
+    parser.add_argument("--app-secret", default="",
+                        help="飞书 App Secret（非交互，--output feishu 时使用）")
+    parser.add_argument("--output-dir", default="",
+                        help="Excel 输出目录（非交互，--output excel 时使用）")
     args = parser.parse_args()
 
     if args.check:
         run_check()
+    elif args.output:
+        # Non-interactive path
+        _run_setup_noninteractive(args)
     else:
         run_setup(reset=args.reset)

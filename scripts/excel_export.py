@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 Amazon Rufus FAQ → 本地 Excel 导出（标准库，无 pip 依赖）
 

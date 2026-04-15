@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 Amazon Rufus FAQ — 上传 / 导出脚本
 

@@ -28,6 +28,10 @@ version: 2.0.0
 
 ### Step 1 — 检查 Chrome CDP 环境
 
+**前置条件（必须同时满足）：**
+- Chrome 已开启远程调试
+- Chrome 已登录美区 Amazon 账户（**Rufus 不向未登录用户显示，缺少登录态会导致 FAQ 采集为空**）
+
 ```bash
 node "${CLAUDE_SKILL_DIR}/scripts/check-deps.mjs"
 ```
@@ -49,17 +53,28 @@ node "${CLAUDE_SKILL_DIR}/scripts/check-deps.mjs"
 python3 "${CLAUDE_SKILL_DIR}/scripts/feishu_setup.py" --check
 ```
 
-**若配置不存在或无效：**
-运行首次配置引导（交互模式，需用户输入）：
+**若配置不存在或无效，运行初始配置：**
+
+优先使用非交互模式（已知 App ID / App Secret 时）：
+```bash
+# 飞书模式
+python3 "${CLAUDE_SKILL_DIR}/scripts/feishu_setup.py" \
+  --output feishu \
+  --app-id <APP_ID> \
+  --app-secret <APP_SECRET>
+
+# Excel 模式（不需要飞书）
+python3 "${CLAUDE_SKILL_DIR}/scripts/feishu_setup.py" \
+  --output excel \
+  --output-dir ~/Desktop/rufus-faq
+```
+
+若需向用户索取凭证，可使用交互模式（需 TTY）：
 ```bash
 python3 "${CLAUDE_SKILL_DIR}/scripts/feishu_setup.py"
 ```
 
-脚本会引导用户：
-- 创建飞书自建应用（详细步骤见 `${CLAUDE_SKILL_DIR}/references/feishu_app_setup.md`）
-- 输入 App ID 和 App Secret
-- 自动创建包含两张表的多维表格
-- 保存配置至 `~/.config/amazon-rufus/config.json`
+脚本会自动创建包含两张表的多维表格，保存配置至 `~/.config/amazon-rufus/config.json`。
 
 **若配置有效：** 继续下一步。
 
@@ -78,9 +93,10 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/scrape_rufus.py" \
 4. 采集每条 Q&A 及 Rufus 回复中的图片 URL
 5. 关闭 tab，输出 JSON 到 stdout
 
-若脚本报错 `Rufus pills not found`，可能原因：
+若脚本报错 `Rufus pills not found` 或 FAQ 列表为空，可能原因：
+- **Amazon 未登录**（最常见）：确认 Chrome 中已登录美区 Amazon 账户，Rufus 仅对登录用户显示
 - 页面加载太慢：重试时加 `--wait 12`
-- Amazon 地区限制：确认 Chrome 已登录美区 Amazon 账户
+- Amazon 地区限制：确认 Chrome 代理设置指向美区
 
 ### Step 4 — 保存结果
 

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# ruff: noqa: UP007
+from __future__ import annotations
 """
 Amazon Rufus FAQ 抓取脚本
 
@@ -49,7 +51,7 @@ def cdp(path: str, body: str = None, method: str = None) -> dict | str:
         raise RuntimeError(f"CDP {path} failed: {e.code} {e.read().decode()}")
 
 
-def js(target_id: str, script: str) -> any:
+def js(target_id: str, script: str):
     """Execute JS and return the unwrapped value."""
     result = cdp(f"/eval?target={target_id}", script, "POST")
     if isinstance(result, dict):
